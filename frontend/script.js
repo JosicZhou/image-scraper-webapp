@@ -12,7 +12,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const downloadSelectedBtn = document.getElementById('download-selected-btn');
     const deleteSelectedBtn = document.getElementById('delete-selected-btn');
 
-    const API_URL = `${window.location.protocol}//${window.location.hostname}:5000`;
     let allImages = [];
     let currentIndex = 0;
     const batchSize = 50;
@@ -34,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
             scrapeBtn.textContent = 'Scraping...';
             scrapeBtn.disabled = true;
 
-            const response = await fetch(`${API_URL}/scrape`, {
+            const response = await fetch(`/scrape`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url }),
@@ -84,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
         card.dataset.imageUrl = image.src;
         card.dataset.altText = image.alt;
 
-        const proxyUrl = `${API_URL}/proxy?url=${encodeURIComponent(image.src)}`;
+        const proxyUrl = `/proxy?url=${encodeURIComponent(image.src)}`;
 
         card.innerHTML = `
             <img src="${proxyUrl}" alt="${image.alt}" loading="lazy" onerror="this.src='https://via.placeholder.com/200x150?text=Image+Not+Found'; this.onerror=null;">
@@ -108,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
             button.textContent = 'Downloading...';
             button.disabled = true;
 
-            const response = await fetch(`${API_URL}/download-image`, {
+            const response = await fetch(`/download-image`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: image.src, alt: image.alt }),
@@ -192,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
             downloadSelectedBtn.textContent = `Downloading (${selectedImages.length})...`;
             downloadSelectedBtn.disabled = true;
 
-            const response = await fetch(`${API_URL}/download-selected`, {
+            const response = await fetch(`/download-selected`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ images: selectedImages }),
