@@ -10,8 +10,15 @@ from flask_cors import CORS, cross_origin
 from bs4 import BeautifulSoup, Tag
 from urllib.parse import urljoin, urlparse, unquote
 
-frontend_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend'))
-app = Flask(__name__, static_folder=frontend_folder, static_url_path='')
+# Define the path for the frontend folder
+# Use os.path.abspath to ensure it's an absolute path
+# '__file__' is the path to the current script (app.py)
+# os.path.dirname gets the directory of the script (backend)
+# os.path.join goes one level up ('..') and then into 'frontend'
+frontend_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend')
+
+# When initializing Flask, tell it where to find static files (like CSS, JS) and templates (HTML)
+app = Flask(__name__, static_folder=frontend_folder, template_folder=frontend_folder)
 CORS(app)
 
 UPLOAD_FOLDER = 'uploads'
@@ -66,7 +73,14 @@ def sanitize_filename(filename):
 
 @app.route('/')
 def root():
-    return app.send_static_file('index.html')
+    # Use render_template to serve the main HTML page
+    # Flask will look for 'index.html' in the 'template_folder' we defined above
+    return send_from_directory(app.template_folder, 'index.html')
+
+@app.route('/<path:filename>')
+def serve_static(filename):
+    # This route will serve other static files like script.js, style.css, etc.
+    return send_from_directory(app.static_folder, filename)
 
 @app.route('/scrape', methods=['POST'])
 def scrape():
@@ -87,6 +101,8 @@ def scrape():
 
     soup = BeautifulSoup(response.content, 'html.parser')
     images = []
+    seen_srcs = set()  # Keep track of image URLs we've already seen
+
     for img in soup.find_all('img'):
         if isinstance(img, Tag):
             # Handle lazy-loaded images that use 'data-src'
@@ -100,6 +116,12 @@ def scrape():
 
                 # Clean Fandom/Wikia URLs to get full resolution images
                 src = clean_fandom_url(src)
+
+                # --- CHECK FOR DUPLICATES ---
+                # If we have already processed this image URL, skip it.
+                if src in seen_srcs:
+                    continue
+                seen_srcs.add(src)
 
                 # --- HIERARCHICAL RENAMING LOGIC ---
                 # Rule 1: By default, trust the alt text.
