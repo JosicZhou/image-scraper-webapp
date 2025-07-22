@@ -103,55 +103,81 @@ def scrape():
     images = []
     seen_srcs = set()  # Keep track of image URLs we've already seen
 
+    # Find all image tags, including those inside figures or other elements
     for img in soup.find_all('img'):
-        if isinstance(img, Tag):
-            # Handle lazy-loaded images that use 'data-src'
-            src = img.get('data-src') or img.get('src')
-            alt = img.get('alt') # Will be None if 'alt' attribute doesn't exist
+        if not isinstance(img, Tag):
+            continue
 
-            # IMPORTANT: Only process images that have both a 'src' and a non-empty 'alt' attribute.
-            if src and alt:
-                # Make URL absolute
-                src = urljoin(url, str(src))
+        # Handle lazy-loaded images that use 'data-src' or 'src'
+        src = img.get('data-src') or img.get('src')
+        if not src:
+            continue
 
-                # Clean Fandom/Wikia URLs to get full resolution images
-                src = clean_fandom_url(src)
+        # Make URL absolute, clean Fandom URLs, and check for duplicates
+        src = urljoin(url, str(src))
+        src = clean_fandom_url(src)
+        if src in seen_srcs:
+            continue
 
-                # --- CHECK FOR DUPLICATES ---
-                # If we have already processed this image URL, skip it.
-                if src in seen_srcs:
-                    continue
-                seen_srcs.add(src)
+        # --- HIERARCHICAL RENAMING LOGIC (User-defined order: alt -> figcaption -> URL) ---
+        final_name = None
 
-                # --- HIERARCHICAL RENAMING LOGIC ---
-                # Rule 1: By default, trust the alt text.
-                final_name = str(alt)
+        # Rule 1: Prioritize the image's 'alt' text.
+        alt = img.get('alt')
+        if alt and alt.strip():
+            final_name = alt.strip()
 
-                # Rule 2: Check if the alt text is suspicious (e.g., is a URL, too long).
-                is_suspicious = ('http:' in final_name.lower()) or \
-                                ('https:' in final_name.lower()) or \
-                                ('.php' in final_name.lower()) or \
-                                (len(final_name) > 80)
-
-                # Rule 3: If suspicious, try to get a better name from the URL.
-                if is_suspicious:
-                    try:
-                        parsed_url = urlparse(src)
-                        filename_from_url = os.path.basename(parsed_url.path)
-                        image_name_from_url, _ = os.path.splitext(unquote(filename_from_url))
-                        
-                        # If a name is successfully extracted, use it.
-                        if image_name_from_url:
-                            final_name = image_name_from_url
-                    except Exception as e:
-                        print(f"Could not parse name from URL {src} despite suspicious alt text: {e}")
-                        # Fallback to the original (suspicious) alt text if parsing fails.
-                        pass
+        # Rule 2: If no alt text, fall back to the caption from a parent <figure> element.
+        if not final_name:
+            parent_figure = img.find_parent('figure')
+            if parent_figure:
+                caption_tag = parent_figure.find('figcaption')
+                if caption_tag and caption_tag.get_text(strip=True):
+                    final_name = caption_tag.get_text(strip=True)
+        
+        # Rule 3 (FALLBACK): If there's still no name, derive it from the image filename in the URL.
+        if not final_name:
+            try:
+                parsed_url = urlparse(src)
+                filename_from_url = os.path.basename(parsed_url.path)
+                image_name_from_url, _ = os.path.splitext(unquote(filename_from_url))
                 
-                # FINAL UNIFICATION: Replace underscores with spaces for both display and download.
-                final_name = final_name.replace('_', ' ')
+                if image_name_from_url:
+                    final_name = image_name_from_url
+            except Exception as e:
+                print(f"Could not get name from URL for {src}, skipping. Error: {e}")
+                continue # Skip if URL parsing fails
 
-                images.append({'src': src, 'alt': final_name})
+        # If after all checks we still have no name, then skip.
+        if not final_name:
+            continue
+
+        # If we reach here, we have a valid src and a name.
+        seen_srcs.add(src)
+
+        # Rule 4 (CLEANUP): Check if the name is suspicious (e.g., looks like a URL).
+        # If so, we prefer the name derived from the URL.
+        is_suspicious = ('http:' in final_name.lower()) or \
+                        ('https:' in final_name.lower()) or \
+                        ('.php' in final_name.lower()) or \
+                        (len(final_name) > 80)
+
+        if is_suspicious:
+            try:
+                parsed_url = urlparse(src)
+                filename_from_url = os.path.basename(parsed_url.path)
+                image_name_from_url, _ = os.path.splitext(unquote(filename_from_url))
+                
+                if image_name_from_url:
+                    final_name = image_name_from_url # Override suspicious name
+            except Exception as e:
+                print(f"Could not parse name from URL {src} despite suspicious alt text: {e}")
+                pass
+        
+        # FINAL UNIFICATION: Replace underscores with spaces for consistency.
+        final_name = final_name.replace('_', ' ')
+
+        images.append({'src': src, 'alt': final_name})
 
     return jsonify(images)
 
